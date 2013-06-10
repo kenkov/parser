@@ -164,6 +164,7 @@ class ChartParser(object):
             init_arcs[word].add((lh, word))
 
         # initialize
+        pool = set([])
         for i, w in enumerate(sent):
             for lh, word in init_arcs[w]:
                 hyp1 = Arc(lh, tuple([]), tuple([word]), i, i, 1)
@@ -171,6 +172,7 @@ class ChartParser(object):
                 prob = hyp1.prob * hyp2.prob
                 new_arc = hyp1 + hyp2
                 adjenda[new_arc] = prob
+                pool.add(new_arc)
         print adjenda
 
         # initialize chart
@@ -196,15 +198,20 @@ class ChartParser(object):
                                      (s, e), arcs in chart_init[y].items()
                                      if s == arc.end]:
                     for hyp in [hyp for hyp in arcs if not hyp.after]:
-                        adjenda[arc + hyp] = arc.prob * hyp.prob
-
+                        con = arc + hyp
+                        if con not in pool:
+                            adjenda[con] = arc.prob * hyp.prob
+                            pool.add(con)
             else:
                 for (s, e), arcs in [((s, e), arcs) for
                                      (s, e), arcs in
                                      chart_after[arc.lhs].items()
                                      if e == arc.start]:
-                    for hyp in [arc for arc in arcs if arc[2]]:
-                        adjenda[hyp + arc] = hyp.prob * arc.prob
+                    for hyp in [hyp for hyp in arcs if arc.after]:
+                        con = hyp + arc
+                        if con not in pool:
+                            adjenda[con] = hyp.prob * arc.prob
+                            pool.add(con)
 
             # recommend new arc
                 if arc.lhs in gr_right:
@@ -216,29 +223,29 @@ class ChartParser(object):
                             arc.start,
                             arc.start,
                             1))
-                        adjenda[predarc] = predarc.prob
+                        if predarc not in pool:
+                            adjenda[predarc] = predarc.prob
+                            pool.add(predarc)
         return chart
 
-    """
-    def answer(self, chart, sent):
-        return [arc for arc in chart[(0, len(sent))]]
+    #def answer(self, chart, sent):
+    #    return [arc for arc in chart[(0, len(sent))]]
 
-    def print_answer(self, arc, sent):
-        print u" ".join(sent).encode('utf-8')
-        if arc.is_last():
-            return
-        print self._ans_format(arc, sent)
-        self.print_answer(arc.hyp1, sent)
-        self.print_answer(arc.hyp2, sent)
+    #def print_answer(self, arc, sent):
+    #    print u" ".join(sent).encode('utf-8')
+    #    if arc.is_last():
+    #        return
+    #    print self._ans_format(arc, sent)
+    #    self.print_answer(arc.hyp1, sent)
+    #    self.print_answer(arc.hyp2, sent)
 
-    def _ans_format(self, arc, sent):
-        s = arc.start
-        e = arc.end
-        s_f = u" " * sum(map(len, sent[:s])) + u" "
-        e_f = u" " + u" " * sum(map(len, sent[e:]))
-        f_f = u"=" * sum(map(len, sent[s:e]))
-        return s_f + f_f + e_f
-    """
+    #def _ans_format(self, arc, sent):
+    #    s = arc.start
+    #    e = arc.end
+    #    s_f = u" " * sum(map(len, sent[:s])) + u" "
+    #    e_f = u" " + u" " * sum(map(len, sent[e:]))
+    #    f_f = u"=" * sum(map(len, sent[s:e]))
+    #    return s_f + f_f + e_f
 
 
 def test_terminals():
@@ -264,10 +271,17 @@ def main():
                ("NP", u"'I'"),
                ("NP", u"'Rikka'"),
                ("V", u"'love'")}
-    sent = ["".join(["'", w, "'"]) for w in u"I love Rikka".split()]
     parser = ChartParser(grammar)
+    sent = ["".join(["'", w, "'"]) for w in u"I love Rikka".split()]
     res = parser.search(sent)
-    print res
+    #print res
+    grammar2 = {("NP", "NP", "NP"),
+                ("NP", u"'I'"),
+                ("NP", u"'Rikka'")}
+    parser2 = ChartParser(grammar2)
+    sent2 = ["".join(["'", w, "'"]) for w in u"I Rikka".split()]
+    res2 = parser2.search(sent2)
+    #print res2
 
 
 if __name__ == '__main__':
