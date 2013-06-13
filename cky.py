@@ -29,6 +29,11 @@ def cyk(sent, grammar):
     # grammar[("A", "B", "C")] = 0.5
     gram = {}
 
+    # hypergraph
+    graph = set()
+    # best edge
+    best_edge = {}
+
     # initialize
     tg = _terminal_grammar(grammar)
     for i in range(len(sent)):
@@ -36,6 +41,8 @@ def cyk(sent, grammar):
                                 if word == sent[i]]:
             chart[(sym, i, i)] = prob
             chart_ind[(i, i)].add((sym, i, i))
+            graph.add((((word, i, i),), (sym, i, i)))
+            best_edge[(sym, i, i)] = ((word, i, i),)
     for (sym, lsym, rsym), prob in _non_terminal_grammar(grammar):
         grammar_hash[(lsym, rsym)].add((sym, lsym, rsym))
         gram[(sym, lsym, rsym)] = prob
@@ -56,6 +63,9 @@ def cyk(sent, grammar):
                         if lsym in {s for s, _, _ in chart_ind[lindex]} and \
                                 rsym in {s for s, _, _ in chart_ind[rindex]}:
                             print "    {} -> {} {}".format(sym, lsym, rsym)
+                            # add to hypergraph
+                            graph.add((((lsym, i, k), (rsym, k + 1, i + j)),
+                                       (sym, i, i + j)))
                             # calculate probability
                             prob = chart[(lsym, lindex[0], lindex[1])] * \
                                 chart[(rsym, rindex[0], rindex[1])] * \
@@ -64,9 +74,13 @@ def cyk(sent, grammar):
                             if prob >= chart[(sym, i, i + j)]:
                                 chart[(sym, i, i + j)] = prob
                                 chart_ind[v_index].add((sym, i, i + j))
+                                best_edge[(sym, i, i + j)] = (
+                                    (lsym, i, k),
+                                    (rsym, k + 1, k + j))
                                 print "    update: {}, {}, {}".format(
                                     sym, (i, i+j), prob)
-    return chart
+    return {"best_edge": best_edge,
+            "graph": graph}
 
 
 def test1():
@@ -78,7 +92,7 @@ def test1():
                ("V", u"love"): 0.7}
     #sent = ["".join(["'", w, "'"]) for w in u"I love Rikka".split()]
     sent = "I love Rikka".split()
-    print cyk(sent, grammar)
+    print cyk(sent, grammar)["best_edge"]
 
 
 def test2():
@@ -97,8 +111,9 @@ def test2():
 
     #sent = ["".join(["'", w, "'"]) for w in u"I love Rikka".split()]
     sent = "I eat pizza with Maria".split()
-    print cyk(sent, grammar)
+    print cyk(sent, grammar)["best_edge"]
 
 
 if __name__ == '__main__':
-    test2()
+    test1()
+    #test2()
