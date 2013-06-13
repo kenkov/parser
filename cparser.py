@@ -34,7 +34,7 @@ class Arc(object):
         return DeductiveArc(self, other)
 
     def __unicode__(self):
-        fmt = u"({s}, {e}) {lhs} -> {bf}・{af} [{p}]"
+        fmt = u"[{p}] ({s}, {e}) {lhs} -> {bf}・{af}"
         return fmt.format(
             s=self.start, e=self.end, lhs=self.lhs,
             bf=" ".join(self.before),
@@ -146,8 +146,9 @@ class ChartParser(object):
         re_obj = re.compile(ur"^'\S+'$")
         ret = set()
         for item in grammar:
-            if re_obj.search(item[1]):
-                ret.add(item)
+            if len(item) == 3:
+                if re_obj.search(item[1]):
+                    ret.add(item)
         return ret
 
     def search(self, sent, verbose=False):
@@ -160,20 +161,19 @@ class ChartParser(object):
 
         # initial arcs
         init_arcs = defaultdict(set)
-        for lh, word in self.terminals(self._grammar):
-            init_arcs[word].add((lh, word))
+        for lh, word, pr in self.terminals(self._grammar):
+            init_arcs[word].add((lh, word, pr))
 
         # initialize
         pool = set([])
         for i, w in enumerate(sent):
-            for lh, word in init_arcs[w]:
-                hyp1 = Arc(lh, tuple([]), tuple([word]), i, i, 1)
+            for lh, word, pr in init_arcs[w]:
+                hyp1 = Arc(lh, tuple([]), tuple([word]), i, i, pr)
                 hyp2 = Arc(word, tuple([]), tuple([]), i, i+1, 1)
                 prob = hyp1.prob * hyp2.prob
                 new_arc = hyp1 + hyp2
                 adjenda[new_arc] = prob
                 pool.add(new_arc)
-        print adjenda
 
         # initialize chart
         chart = defaultdict(set)
@@ -189,8 +189,10 @@ class ChartParser(object):
             # Use set to remove deplicated items
             chart[(arc.start, arc.end)].add(arc)
             chart_init[arc.lhs][(arc.start, arc.end)].add(arc)
+
             if arc.after:
                 chart_after[arc.after[0]][(arc.start, arc.end)].add(arc)
+
             # active edge
             if arc.after:
                 y = arc.after[0]
@@ -207,7 +209,7 @@ class ChartParser(object):
                                      (s, e), arcs in
                                      chart_after[arc.lhs].items()
                                      if e == arc.start]:
-                    for hyp in [hyp for hyp in arcs if arc.after]:
+                    for hyp in [hyp for hyp in arcs if hyp.after]:
                         con = hyp + arc
                         if con not in pool:
                             adjenda[con] = hyp.prob * arc.prob
@@ -219,69 +221,81 @@ class ChartParser(object):
                         predarc = PredArc(Arc(
                             gr[0],
                             tuple([]),
-                            tuple(gr[1:]),
+                            tuple(gr[1:][:-1]),
                             arc.start,
                             arc.start,
-                            1))
+                            gr[-1]))
                         if predarc not in pool:
                             adjenda[predarc] = predarc.prob
                             pool.add(predarc)
         return chart
 
-    #def answer(self, chart, sent):
-    #    return [arc for arc in chart[(0, len(sent))]]
+    def _find(self, arc, chart):
+        return [item for item in chart[(arc.start, arc.end)]
+                if item.conc == arc]
 
-    #def print_answer(self, arc, sent):
-    #    print u" ".join(sent).encode('utf-8')
-    #    if arc.is_last():
-    #        return
-    #    print self._ans_format(arc, sent)
-    #    self.print_answer(arc.hyp1, sent)
-    #    self.print_answer(arc.hyp2, sent)
+    def answer(self, chart, sent):
+        return [arc for arc in chart[(0, len(sent))]]
 
-    #def _ans_format(self, arc, sent):
-    #    s = arc.start
-    #    e = arc.end
-    #    s_f = u" " * sum(map(len, sent[:s])) + u" "
-    #    e_f = u" " + u" " * sum(map(len, sent[e:]))
-    #    f_f = u"=" * sum(map(len, sent[s:e]))
-    #    return s_f + f_f + e_f
+    def print_answer(self, arc, sent):
+        print u" ".join(sent).encode('utf-8')
+        if arc.is_last():
+            return
+        print self._ans_format(arc, sent)
+        self.print_answer(arc.hyp1, sent)
+        self.print_answer(arc.hyp2, sent)
+
+    def _ans_format(self, arc, sent):
+        s = arc.start
+        e = arc.end
+        s_f = u" " * sum(map(len, sent[:s])) + u" "
+        e_f = u" " + u" " * sum(map(len, sent[e:]))
+        f_f = u"=" * sum(map(len, sent[s:e]))
+        return s_f + f_f + e_f
 
 
 def test_terminals():
-    grammar = {("S", "NP", "VP"),
-               ("S", "NP", "VP", "NP"),
-               ("VP", "V", "NP"),
-               ("NP", "N"),
-               ("NP", "'kenkovtan'"),
-               ("NP", "'Rikka'"),
-               ("V", "'loves'")}
+    grammar = {("S", "NP", "VP", 0.5),
+               ("S", "NP", "VP", "NP", 0.1),
+               ("VP", "V", "NP", 0.5),
+               ("NP", "N", 0.1),
+               ("NP", "'kenkovtan'", 0.3),
+               ("NP", "'Rikka'", 0.3),
+               ("V", "'loves'", 0.4)}
     parser = ChartParser(grammar)
     assert parser.terminals(grammar) == {
-        ('NP', "'kenkovtan'"),
-        ('NP', "'Rikka'"),
-        ('V', "'loves'")}
+        ('NP', "'kenkovtan'", 0.3),
+        ('NP', "'Rikka'", 0.3),
+        ('V', "'loves'", 0.4)}
 
 
 def main():
-    grammar = {("S", "NP", "VP"),
-               #("S", "NP", "VP", "NP"),
-               ("VP", "V", "NP"),
-               ("NP", "N"),
-               ("NP", u"'I'"),
-               ("NP", u"'Rikka'"),
-               ("V", u"'love'")}
+    grammar = {("S", "NP", "VP", 2),
+               ("S", "NP", "V", "NP", 5),
+               ("VP", "V", "NP", 10),
+               ("NP", u"'I'", 3),
+               ("NP", u"'Rikka'", 3),
+               ("V", u"'love'", 2)}
     parser = ChartParser(grammar)
     sent = ["".join(["'", w, "'"]) for w in u"I love Rikka".split()]
     res = parser.search(sent)
-    #print res
-    grammar2 = {("NP", "NP", "NP"),
-                ("NP", u"'I'"),
-                ("NP", u"'Rikka'")}
+    print res
+    grammar2 = {("NP", "NP", "NP", 2),
+                ("NP", u"'I'", 3),
+                ("NP", u"'Rikka'", 3)}
     parser2 = ChartParser(grammar2)
     sent2 = ["".join(["'", w, "'"]) for w in u"I Rikka".split()]
     res2 = parser2.search(sent2)
-    #print res2
+    print res2
+    grammar2 = {("N", "N", "N", 2),
+                ("N", u"'I'", 3),
+                ("N", u"'am'", 3),
+                ("N", u"'a'", 3),
+                ("N", u"'teacher'", 3)}
+    parser2 = ChartParser(grammar2)
+    sent2 = ["".join(["'", w, "'"]) for w in u"I I I I I".split()]
+    res2 = parser2.search(sent2)
+    print res2
 
 
 if __name__ == '__main__':
